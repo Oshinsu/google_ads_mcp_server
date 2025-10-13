@@ -3,20 +3,18 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY . .
 
-# 1) Outils
-RUN pip install --upgrade pip
-RUN pip install uv
+# Outils
+RUN pip install --upgrade pip && pip install uv
 
-# 2) Installe ton projet tel que défini par pyproject.toml,
-#    dans l'environnement système (pas de venv Docker)
+# Installe le projet défini par pyproject.toml **dans le système** (pas de venv Docker)
 RUN uv pip install --system -e .
 
-# 3) Var d'env utiles
+# (Optionnel) mets à jour google-ads vers une version standard >= 28.0.0
+RUN uv pip install --system --upgrade "google-ads>=28.0.0"
+
 ENV PYTHONPATH=/app
-# FastMCP écoute sur le réseau (pour Railway)
 ENV FASTMCP_HOST=0.0.0.0
 
-# 4) Entrypoint pour reconstruire les secrets et lancer le serveur
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
