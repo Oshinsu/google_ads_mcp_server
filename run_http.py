@@ -81,4 +81,51 @@ def _asgi_from(obj: Any):
     return None
 
 def main() -> None:
-    host = os.getenv("FASTMCP_HOST", "0.0.0.
+    host = os.getenv("FASTMCP_HOST", "0.0.0.0")  # Railway: 0.0.0.0
+    port = int(os.getenv("PORT", os.getenv("FASTMCP_PORT", "8080")))
+    path = os.getenv("FASTMCP_PATH", "/mcp")     # par convention FastMCP
+
+    _debug(f"Boot… host={host} port={port} path={path}")
+
+    mod = _import_first_existing()
+    mode, entry = _pick_entry(mod)
+    _debug(f"Module chargé: {mod.__name__} ; mode choisi: {mode}")
+
+    # 1) objet FastMCP avec run()
+    if mode == "fastmcp_obj":
+        try:
+            # FastMCP >= 2.x accepte transport="http"
+            _debug("Appel entry.run(transport='http', host, port, path)…")
+            # Certains FastMCP n’acceptent pas l’arg 'path' → on tente avec, puis sans.
+            try:
+                entry.run(transport="http", host=host, port=port, path=path)
+            except TypeError:
+                entry.run(transport="http", host=host, port=port)
+            return
+        except Exception as e:
+            _debug(f"entry.run(...) a échoué: {e!r}")
+
+    # 2) fonction main()/server()/app() qui sait démarrer le serveur
+    if mode == "callable":
+        try:
+            _debug("Appel de la fonction d’entrée…")
+            entry()  # suppose qu'elle bloque (serveur en cours d'exécution)
+            return
+        except Exception as e:
+            _debug(f"fonction d'entrée a échoué: {e!r}")
+
+    # 3) app ASGI → uvicorn
+    asgi_app = _asgi_from(entry) if mode == "asgi" else _asgi_from(mod)
+    if asgi_app is not None:
+        try:
+            _debug("Démarrage via uvicorn (ASGI)…")
+            import uvicorn
+            uvicorn.run(asgi_app, host=host, port=port)
+            return
+        except Exception as e:
+            _debug(f"uvicorn a échoué: {e!r}")
+
+    raise SystemExit("Aucun mode HTTP n'a pu démarrer. Vérifie l’export d’un objet FastMCP (mcp/server/app) ou une main().")
+
+if __name__ == "__main__":
+    main()
