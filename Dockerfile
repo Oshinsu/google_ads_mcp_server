@@ -3,17 +3,22 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY . .
 
-# Installation du moteur "uv" et du projet localement
+# 1) Outils
 RUN pip install --upgrade pip
 RUN pip install uv
 
-# Installe le projet (avec son pyproject.toml)
-RUN uv pip install -e .
+# 2) Installe ton projet tel que défini par pyproject.toml,
+#    dans l'environnement système (pas de venv Docker)
+RUN uv pip install --system -e .
 
-# Expose les variables Python
+# 3) Var d'env utiles
 ENV PYTHONPATH=/app
+# FastMCP écoute sur le réseau (pour Railway)
+ENV FASTMCP_HOST=0.0.0.0
+
+# 4) Entrypoint pour reconstruire les secrets et lancer le serveur
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8080
-
-# Le vrai point d’entrée du serveur
-CMD ["uv", "run", "server"]
+CMD ["/entrypoint.sh"]
