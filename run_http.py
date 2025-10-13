@@ -1,66 +1,84 @@
 # run_http.py
-import importlib, os, sys
+"""
+Lance le serveur MCP en HTTP conforme au spec Streamable HTTP (MCP 2024-11-05).
+- Écoute 0.0.0.0:$PORT (Railway)
+- Cherche automatiquement l'instance FastMCP exportée par le projet
+- Tolérant aux variations (objets nommés mcp / server / app, ou main() )
+Docs:
+- MCP Streamable HTTP: Accept 'application/json, text/event-stream', header 'Mcp-Session-Id'. 
+"""
 
-# Rendez ces chemins visibles (layout classique + src/)
-sys.path.extend(["/app", "/app/src"])
+from __future__ import annotations
+import importlib
+import inspect
+import os
+import sys
+from typing import Any, Callable
 
-CANDIDATES = [
-    ("ads_mcp.server", ("mcp","server","app")),  # nouveau dépôt le plus courant
-    ("ads_mcp",        ("mcp","server","app")),  # variante
-    ("main",           ("mcp","server","app")),  # ancien dépôt (entry point "server = main:main")
-    ("google_ads_mcp", ("mcp","server","app")),
-    ("google_ads_mcp.server", ("mcp","server","app")),
-]
+# Rendez visibles les layouts courants
+for p in ("/app", "/app/src", os.getcwd()):
+    if p not in sys.path:
+        sys.path.append(p)
 
-def load_obj():
-    err = []
-    for mod_name, attrs in CANDIDATES:
+# Modules probables et symboles candidats
+MODULE_CANDIDATES = (
+    "ads_mcp.server",
+    "ads_mcp",
+    "google_ads_mcp.server",
+    "google_ads_mcp",
+    "main",
+)
+SYMBOL_CANDIDATES = ("mcp", "server", "app")  # objets FastMCP/ASGI fréquents
+
+def _debug(msg: str) -> None:
+    print(f"[run_http] {msg}", flush=True)
+
+def _import_first_existing() -> Any:
+    errors = []
+    for modname in MODULE_CANDIDATES:
         try:
-            mod = importlib.import_module(mod_name)
-            for a in attrs:
-                if hasattr(mod, a):
-                    return getattr(mod, a)
-        except Exception as e:
-            err.append(f"{mod_name}: {e}")
-            continue
-    raise ImportError("Impossible de trouver l'objet FastMCP (mcp/server/app). Traces: " + " | ".join(err))
+            return importlib.import_module(modname)
+        except Exception as e:  # large filet: on essaye tout
+            errors.append(f"{modname}: {e}")
+    raise ImportError("Impossible d'importer un module serveur. Traces: " + " | ".join(errors))
 
-if __name__ == "__main__":
-    obj = load_obj()
-    host = "0.0.0.0"
-    port = int(os.getenv("PORT", os.getenv("FASTMCP_PORT", "8080")))
-    # on force la racine pour éviter les confusions de path
-    print(f"[run_http] starting on {host}:{port}", flush=True)
+def _pick_entry(mod: Any) -> tuple[str, Any]:
+    """
+    Renvoie (mode, callable/obj):
+    - ("fastmcp_obj", obj)  si l'objet a une méthode run(...)
+    - ("callable", func)    si c'est une fonction main()/server()/app()
+    - ("asgi", app)         si c'est une app ASGI (Starlette/FastAPI) à lancer via uvicorn
+    """
+    # 1) symboles courants: mcp / server / app
+    for name in SYMBOL_CANDIDATES:
+        if hasattr(mod, name):
+            obj = getattr(mod, name)
+            # objet FastMCP ?
+            if hasattr(obj, "run") and callable(getattr(obj, "run")):
+                return ("fastmcp_obj", obj)
+            # appli ASGI ?
+            if callable(obj) and not inspect.isfunction(obj):
+                # objets "app = FastAPI()" sont appelables mais pas fonctions
+                return ("asgi", obj)
+            if inspect.isfunction(obj):
+                return ("callable", obj)
 
-    # 1) Essaye l’API FastMCP 2.x standard
-    try:
-        # certaines versions n'acceptent pas 'path' → on tente sans
-        obj.run(transport="http", host=host, port=port)
-        raise SystemExit(0)
-    except TypeError:
-        pass
-    except AttributeError:
-        pass
-    except Exception as e:
-        print(f"[run_http] run(transport='http', ...) a échoué: {e}", flush=True)
+    # 2) main() exportée ?
+    if hasattr(mod, "main") and callable(getattr(mod, "main")):
+        return ("callable", getattr(mod, "main"))
 
-    # 2) Essaye une API alternative (certains wrappers exposent run_http)
-    try:
-        run_http = getattr(obj, "run_http", None)
-        if callable(run_http):
-            run_http(host=host, port=port)
-            raise SystemExit(0)
-    except Exception as e:
-        print(f"[run_http] run_http(...) a échoué: {e}", flush=True)
+    # 3) l'objet module lui-même expose run() ?
+    if hasattr(mod, "run") and callable(getattr(mod, "run")):
+        return ("fastmcp_obj", mod)
 
-    # 3) Dernier recours: démarrer via ASGI si dispo
-    try:
-        app = getattr(obj, "app", None) or getattr(obj, "asgi", None)
-        if callable(app):
-            import uvicorn
-            uvicorn.run(app, host=host, port=port)
-            raise SystemExit(0)
-    except Exception as e:
-        print(f"[run_http] uvicorn sur app/asgi a échoué: {e}", flush=True)
+    raise RuntimeError("Aucun point d'entrée compatible trouvé (mcp/server/app/main).")
 
-    raise SystemExit("[run_http] Aucun mode HTTP n'a pu démarrer.")
+def _asgi_from(obj: Any):
+    # Cherche un attribut 'app' ou 'asgi'
+    for k in ("app", "asgi"):
+        if hasattr(obj, k):
+            return getattr(obj, k)
+    return None
+
+def main() -> None:
+    host = os.getenv("FASTMCP_HOST", "0.0.0.
