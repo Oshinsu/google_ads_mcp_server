@@ -3,10 +3,17 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY . .
 
-RUN pip install --upgrade pip && pip install uv fastapi google-ads
+# Installation du moteur "uv" et du projet localement
+RUN pip install --upgrade pip
+RUN pip install uv
 
-# Ajout clé ici : rendre le package accessible
+# Installe le projet (avec son pyproject.toml)
+RUN uv pip install -e .
+
+# Expose les variables Python
 ENV PYTHONPATH=/app
 
 EXPOSE 8080
-CMD ["uv", "run", "-m", "ads_mcp.server"]
+
+# Le vrai point d’entrée du serveur
+CMD ["uv", "run", "server"]
