@@ -676,6 +676,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "google-ads" },
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -704,6 +705,7 @@ dev = [
 requires-dist = [
     { name = "fastmcp" },
     { name = "google-ads" },
+    { name = "requests", specifier = ">=2.32.4" },
 ]
 
 [package.metadata.requires-dev]
