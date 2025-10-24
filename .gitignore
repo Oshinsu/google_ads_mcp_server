@@ -5,3 +5,5 @@
 .venv
 google-ads.yaml
 DEVELOPMENT.md
+sa-key.json
+__pycache__/
