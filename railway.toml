@@ -1,0 +1,14 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "/app/entrypoint.sh"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "always"
+
+[env]
+PORT = "8080"
+FASTMCP_HOST = "0.0.0.0"
+FASTMCP_PORT = "8080"
+FASTMCP_PATH = "/mcp"

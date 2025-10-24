@@ -1,0 +1,48 @@
+# Dockerfile optimisé pour Railway - Octobre 2025
+FROM python:3.12-slim
+
+# Variables d'environnement
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    FASTMCP_HOST=0.0.0.0 \
+    PORT=8080
+
+# Installation des dépendances système
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Répertoire de travail
+WORKDIR /app
+
+# Copie des fichiers de configuration d'abord (pour le cache Docker)
+COPY pyproject.toml uv.lock ./
+
+# Installation d'uv
+RUN pip install --no-cache-dir uv
+
+# Installation des dépendances Python
+RUN uv pip install --system --no-cache -e .
+
+# Installation de google-ads
+RUN uv pip install --system --no-cache "google-ads>=28.0.0"
+
+# Copie du reste des fichiers
+COPY src/ ./src/
+COPY run_http.py ./
+COPY entrypoint.sh ./
+
+# Permissions
+RUN chmod +x entrypoint.sh
+
+# Port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8080/health', timeout=5)" || exit 1
+
+# Point d'entrée
+ENTRYPOINT ["/app/entrypoint.sh"]
